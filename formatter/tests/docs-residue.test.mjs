@@ -106,3 +106,10 @@ test('residue unwrapping respects the docs-residue toggle', () => {
   assert.equal(runTidyPipeline('<p><span dir="ltr">x</span></p>', off).output,
     '<p><span dir="ltr">x</span></p>');
 });
+
+test('the docs-internal-guid id prefix is matched case-insensitively', () => {
+  // Consistent with the role/dir value matching above.
+  const opts = withOpts({ blockNewlines: false, removeClassesIds: false });
+  assert.equal(runTidyPipeline('<b id="DOCS-INTERNAL-GUID-X"><p>a</p></b>', opts).output,
+    '<p>a</p>');
+});

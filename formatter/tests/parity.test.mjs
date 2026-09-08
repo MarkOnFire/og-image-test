@@ -146,3 +146,43 @@ test('the pipeline, not tidy, is what collapses those runs', () => {
   assert.equal(runTidyPipeline('<p>a     b</p>', passthroughOpts).output, '<p>a b</p>');
   assert.equal(runTidyPipeline('<p>a\n\nb</p>', passthroughOpts).output, '<p>a\nb</p>');
 });
+
+// --- Padded spacer paragraphs (regression, found in review of 4af0a04) ---
+//
+// collapseNbspRuns eats the entity on one side per pass, so "<p> &nbsp; </p>"
+// became "<p>  </p>" — and every empty-tag machine and gap pattern downstream
+// assumes at most one space, because on prettyhtml.com the pre-pass guarantees
+// that. The paragraph survived where it had always been removed. This shape is
+// exactly what a Google Docs paste is full of, so it matters more than its
+// symmetry with the bare form suggests.
+
+test('a space-padded spacer paragraph is removed', () => {
+  assert.equal(runTidyPipeline('<p> &nbsp; </p>', DEFAULTS).output, '');
+});
+
+test('a heavily padded spacer paragraph is removed', () => {
+  assert.equal(runTidyPipeline('<p>  &nbsp;  </p>', DEFAULTS).output, '');
+});
+
+test('padded spacers between real paragraphs are removed', () => {
+  assert.equal(runTidyPipeline('<p>a</p><p> &nbsp; </p><p>b</p>', DEFAULTS).output,
+    '<p>a</p>\n<p>b</p>');
+});
+
+test('a padded &nbsp; between words still collapses to one space', () => {
+  assert.equal(runTidyPipeline('<p>a &nbsp; b</p>', DEFAULTS).output, '<p>a b</p>');
+});
+
+test('collapseNbspRuns leaves no double space behind', () => {
+  // The invariant the rest of the pipeline is written against.
+  assert.equal(runTidyPipeline('x&nbsp; &nbsp;y', DEFAULTS).output, 'x y');
+});
+
+// --- separateBlockElements: behavior locked in, not claimed as parity ---
+
+test('a block child followed by trailing inline text keeps them together', () => {
+  // Documented divergence from the docstring's simpler phrasing; this shape has
+  // not been checked against TinyMCE, so the test records what we do, not parity.
+  assert.equal(runTidyPipeline('<div><p>a</p>tail text</div>', DEFAULTS).output,
+    '<div>\n<p>a</p>\ntail text</div>');
+});

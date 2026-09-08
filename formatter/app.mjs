@@ -614,7 +614,7 @@ export function tidy(html, opts) {
         if (lowerName === 'b') {
           const idAttr = (token.attributes || []).find(a => a.name.toLowerCase() === 'id');
           const isDocsWrapper = Boolean(opts.docsResidue && idAttr && idAttr.value &&
-            idAttr.value.startsWith('docs-internal-guid'));
+            idAttr.value.toLowerCase().startsWith('docs-internal-guid'));
           boldStack.push(isDocsWrapper);
           if (isDocsWrapper) {
             fixCount++;
@@ -1173,7 +1173,19 @@ function collapseNbspRuns(text) {
     t = replaceUntilStable(t, a + ' ', ' ');
     t = replaceUntilStable(t, ' ' + a, ' ');
   }
-  return t;
+
+  // Restore the invariant the pre-pass established. Each replacement above eats
+  // the entity on ONE side, so a padded spacer paragraph — "<p> &nbsp; </p>",
+  // which Google Docs pastes are full of — comes out as "<p>  </p>". Two spaces
+  // match none of the empty-tag machines and none of normalizeTagGaps' patterns
+  // (all of which assume exactly one space, because on their site the pre-pass
+  // guarantees it), so the paragraph survived where it used to be removed.
+  //
+  // prettyhtml.com has the same hole in layer 2 and is saved by layer 1: TinyMCE
+  // trims block-internal padding before any cleaner runs. Re-collapsing here is
+  // the equivalent, and it puts the string back into the shape the rest of the
+  // pipeline is written against.
+  return replaceUntilStable(t, '  ', ' ');
 }
 
 /**
@@ -1214,11 +1226,20 @@ export function straightenSmartPunctuation(text) {
  *
  * This is what TinyMCE's getContent() does for prettyhtml.com at layer 1, and
  * it accounts for most of the visible difference between their output and ours:
- * they hand back line-delimited blocks, we handed back one long line. Measured
- * live — a block's open tag starts a line, its close tag starts a line only when
- * the block has block children, and inline content stays put. Expressed as two
- * boundary rules that produce exactly that, letting the post-pass tidy up the
- * blank lines and stray spaces they leave behind.
+ * they hand back line-delimited blocks, we handed back one long line.
+ *
+ * Two boundary rules, stated as the code actually implements them: a block's open
+ * tag starts a new line unless one has just started, and every block close tag is
+ * followed by one. The post-pass then tidies the blank lines and stray spaces they
+ * leave behind, and a trailing newline is trimmed.
+ *
+ * On the measured cases that is indistinguishable from "a close tag starts a line
+ * only when the block has block children" — `</div>` in `<div><p>x</p></div>` gets
+ * its line from the `</p>` before it, not from a rule of its own. Where the two
+ * descriptions come apart is a block child followed by trailing inline text:
+ * `<div><p>a</p>tail</div>` keeps `tail</div>` together. That shape has not been
+ * checked against TinyMCE, so it is locked in by test as current behavior rather
+ * than claimed as parity.
  *
  * Option 3's "> \n" normalization and newline-only-tag machine exist because their
  * layer 1 emits these newlines before any cleaner runs. Ours emits them after, so
@@ -1232,14 +1253,10 @@ export function separateBlockElements(html) {
   const tokens = tokenize(html);
   const parts = [];
 
-  // True if the output so far ends a line — skipping empty pushes.
-  const atLineStart = () => {
-    for (let i = parts.length - 1; i >= 0; i--) {
-      if (parts[i] === '') continue;
-      return parts[i].endsWith('\n');
-    }
-    return true;
-  };
+  // True if the output so far ends a line. Nothing pushed here is ever empty, so
+  // the last entry is always the one to test.
+  const atLineStart = () =>
+    parts.length === 0 || parts[parts.length - 1].endsWith('\n');
 
   for (const token of tokens) {
     const isBlock = token.tagName && BLOCK_ELEMENTS.has(token.tagName.toLowerCase());
