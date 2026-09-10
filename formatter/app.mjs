@@ -1282,10 +1282,15 @@ export function separateBlockElements(html) {
  * discards both for prettyhtml.com at layer 1, because non-body elements do not
  * survive a DOM round-trip — so this is layer-1 compensation, not a new opinion.
  *
- * Deliberately narrow. It only removes a LEADING head block, and only when the
- * input looks like a fragment rather than a whole page: a real document's <head>
- * is content and must survive Tidy intact. The doctype/html/body probe is what
- * separates the two.
+ * Deliberately narrow, on two axes, because the failure mode here is silent
+ * content loss rather than leftover junk:
+ *
+ *   - Only a LEADING head block, and only when the input looks like a fragment
+ *     rather than a whole page. A real document's <head> is content and must
+ *     survive Tidy intact; the doctype/html/body probe separates the two.
+ *   - Only a head containing nothing but <meta> tags. That is the shape browsers
+ *     synthesize; a head carrying a <title>, <link> or <style> is somebody's
+ *     document, even when it arrived without an <html> wrapper to prove it.
  */
 export function stripClipboardFurniture(html) {
   let out = html;
@@ -1303,7 +1308,7 @@ export function stripClipboardFurniture(html) {
     return html;
   }
 
-  out = out.replace(/^\s*<head\b[^>]*>[\s\S]*?<\/head>/i, '');
+  out = out.replace(/^\s*<head\b[^>]*>(?:\s*<meta\b[^>]*>\s*)*<\/head>/i, '');
   out = out.replace(/^\s*(?:<meta\b[^>]*>\s*)+/i, '');
   return out.trimStart();
 }

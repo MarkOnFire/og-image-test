@@ -154,3 +154,24 @@ test('furniture stripping respects the toggle', () => {
   const off = withOpts({ blockNewlines: false, docsResidue: false });
   assert.match(runTidyPipeline('<head><meta charset="UTF-8"></head><p>x</p>', off).output, /<head>/);
 });
+
+test('a bare head carrying real content is not treated as furniture', () => {
+  // No <html> wrapper to prove it's a document, but a <title> is somebody's
+  // content — losing it silently is worse than leaving a stray <head> behind.
+  const opts = withOpts({ blockNewlines: false });
+  const out = runTidyPipeline('<head><title>T</title></head><p>x</p>', opts).output;
+  assert.match(out, /<title>T<\/title>/);
+});
+
+test('a head mixing meta with real content is left alone', () => {
+  const opts = withOpts({ blockNewlines: false });
+  const out = runTidyPipeline('<head><meta charset="UTF-8"><title>T</title></head><p>x</p>', opts).output;
+  assert.match(out, /<title>T<\/title>/);
+});
+
+test('a multi-meta furniture head is still stripped', () => {
+  const opts = withOpts({ blockNewlines: false });
+  assert.equal(
+    runTidyPipeline('<head><meta charset="UTF-8"><meta name="a" content="b"></head><p>x</p>', opts).output,
+    '<p>x</p>');
+});
