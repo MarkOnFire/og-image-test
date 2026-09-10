@@ -186,3 +186,43 @@ test('a block child followed by trailing inline text keeps them together', () =>
   assert.equal(runTidyPipeline('<div><p>a</p>tail text</div>', DEFAULTS).output,
     '<div>\n<p>a</p>\ntail text</div>');
 });
+
+// --- The real Google Docs clipboard capture ---
+//
+// The google-docs-paste fixture is a genuine Safari clipboard capture (see its
+// provenance field), with prettyhtml.com's layer1 and output measured live
+// against that exact input. Asserting properties as well as the byte-exact
+// output, so a failure says which guarantee broke rather than just "bytes moved."
+
+const docsPaste = fixtures.pipeline.find(f => f.id === 'google-docs-paste');
+
+test('the real Docs capture produces our recorded output', () => {
+  assert.equal(runTidyPipeline(docsPaste.input, DEFAULTS).output, docsPaste.ours);
+});
+
+test('no paste residue survives the real capture', () => {
+  const out = runTidyPipeline(docsPaste.input, DEFAULTS).output;
+  for (const residue of ['<head', '<meta', 'docs-internal-guid', 'dir=', 'style=', 'class=', '<span']) {
+    assert.equal(out.includes(residue), false, `${residue} survived`);
+  }
+});
+
+test('the real capture keeps its actual text content', () => {
+  const out = runTidyPipeline(docsPaste.input, DEFAULTS).output;
+  assert.match(out, /Formatted Transcript/);
+  assert.match(out, /IWPDemGovPrimary082024/);
+  assert.match(out, /00:11:01/);
+});
+
+test('we strip what prettyhtml.com leaves behind on the same input', () => {
+  // Recorded so the divergence is a decision, not an accident: theirs keeps
+  // dir="ltr", eight emptied <span>s, and a stray <p></p>.
+  assert.match(docsPaste.output, /dir="ltr"/);
+  assert.match(docsPaste.output, /<span>/);
+  assert.ok(docsPaste.ours.length < docsPaste.output.length);
+});
+
+test('their layer 1 discards the clipboard furniture, as ours must', () => {
+  assert.equal(docsPaste.layer1.includes('<head'), false);
+  assert.equal(docsPaste.layer1.includes('docs-internal-guid'), false);
+});

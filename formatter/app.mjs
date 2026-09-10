@@ -1275,13 +1275,48 @@ export function separateBlockElements(html) {
 }
 
 /**
+ * Strip the document furniture a clipboard fragment arrives wrapped in.
+ *
+ * Safari prefixes copied HTML with `<head><meta charset="UTF-8"></head>`; Chrome
+ * uses `<!--StartFragment-->` markers instead. Neither is content. TinyMCE
+ * discards both for prettyhtml.com at layer 1, because non-body elements do not
+ * survive a DOM round-trip — so this is layer-1 compensation, not a new opinion.
+ *
+ * Deliberately narrow. It only removes a LEADING head block, and only when the
+ * input looks like a fragment rather than a whole page: a real document's <head>
+ * is content and must survive Tidy intact. The doctype/html/body probe is what
+ * separates the two.
+ */
+export function stripClipboardFurniture(html) {
+  let out = html;
+
+  const OPEN = '<!--StartFragment-->';
+  const start = out.indexOf(OPEN);
+  const end = out.indexOf('<!--EndFragment-->');
+  if (start !== -1 && end !== -1 && end > start) {
+    // Fragment markers are unambiguous clipboard furniture. This has to run
+    // BEFORE the document probe below, because Chrome wraps its fragment in
+    // <html><body> — a probe-first order silently stops handling Chrome pastes.
+    out = out.slice(start + OPEN.length, end);
+  } else if (/<!doctype\s+html|<html[\s>]|<body[\s>]/i.test(out)) {
+    // No markers and it parses as a whole page: its <head> is content. Hands off.
+    return html;
+  }
+
+  out = out.replace(/^\s*<head\b[^>]*>[\s\S]*?<\/head>/i, '');
+  out = out.replace(/^\s*(?:<meta\b[^>]*>\s*)+/i, '');
+  return out.trimStart();
+}
+
+/**
  * Run the full Tidy pipeline, ordered to match convertText().
  * @param {string} html - Raw HTML string
  * @param {object} opts - Option flags (see getTidyOptions)
  * @returns {{output: string, fixCount: number, tagCount: number}}
  */
 export function runTidyPipeline(html, opts) {
-  let text = opts.strayBreaks ? normalizeStrayBreaks(html) : html;
+  let text = opts.docsResidue ? stripClipboardFurniture(html) : html;
+  if (opts.strayBreaks) text = normalizeStrayBreaks(text);
 
   text = normalizeWhitespacePrepass(text);
 
@@ -1488,13 +1523,13 @@ function setInputHTML(el, html) {
  * and surrounding <html><body> wrappers).
  */
 function cleanClipboardHTML(html) {
-  let cleaned = html;
-  const fragStart = cleaned.indexOf('<!--StartFragment-->');
-  const fragEnd = cleaned.indexOf('<!--EndFragment-->');
-  if (fragStart !== -1 && fragEnd !== -1) {
-    cleaned = cleaned.substring(fragStart + '<!--StartFragment-->'.length, fragEnd);
-  }
-  // Strip Google Docs wrapper span (id="docs-internal-guid-...")
+  // Fragment markers and Safari's <head> prefix both go here (see
+  // stripClipboardFurniture); this runs on paste so the furniture never reaches
+  // the source pane in the first place.
+  let cleaned = stripClipboardFurniture(html);
+  // Strip the Google Docs wrapper in its span form. The <b> form that Docs emits
+  // today is handled inside tidy() by boldStack, which unwraps it without
+  // requiring it to be the outermost node.
   cleaned = cleaned.replace(/^<span id="docs-internal-guid-[^"]*">([\s\S]*)<\/span>$/i, '$1');
   return cleaned.trim();
 }

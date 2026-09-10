@@ -113,3 +113,44 @@ test('the docs-internal-guid id prefix is matched case-insensitively', () => {
   assert.equal(runTidyPipeline('<b id="DOCS-INTERNAL-GUID-X"><p>a</p></b>', opts).output,
     '<p>a</p>');
 });
+
+// --- Clipboard furniture (real Safari capture, 2026-09-10) ---
+//
+// Safari prefixes copied HTML with <head><meta charset="UTF-8"></head>; Chrome
+// wraps its fragment in <html><body> with <!--StartFragment--> markers. TinyMCE
+// discards both for prettyhtml.com at layer 1 (confirmed: the measured layer1 in
+// the google-docs-paste fixture has no head). We have no layer 1, so it rides on
+// opt-docs-residue.
+
+test('Safari head/meta prefix is stripped', () => {
+  const opts = withOpts({ blockNewlines: false });
+  assert.equal(runTidyPipeline('<head><meta charset="UTF-8"></head><p>x</p>', opts).output,
+    '<p>x</p>');
+});
+
+test('a bare leading meta is stripped', () => {
+  const opts = withOpts({ blockNewlines: false });
+  assert.equal(runTidyPipeline('<meta charset="UTF-8"><p>x</p>', opts).output, '<p>x</p>');
+});
+
+test('Chrome fragment markers are stripped even inside html/body', () => {
+  // Chrome wraps its fragment in <html><body>, so a document probe that ran
+  // first would silently stop handling Chrome pastes.
+  const opts = withOpts({ blockNewlines: false });
+  assert.equal(
+    runTidyPipeline('<html><body><!--StartFragment--><p>x</p><!--EndFragment--></body></html>', opts).output,
+    '<p>x</p>');
+});
+
+test("a real document's head survives Tidy", () => {
+  // The tool tidies whole pages too; a page's <head> is content, not furniture.
+  const doc = '<!DOCTYPE html><html><head><title>T</title></head><body><p>x</p></body></html>';
+  const out = runTidyPipeline(doc, withOpts({ blockNewlines: false })).output;
+  assert.match(out, /<head>/);
+  assert.match(out, /<title>T<\/title>/);
+});
+
+test('furniture stripping respects the toggle', () => {
+  const off = withOpts({ blockNewlines: false, docsResidue: false });
+  assert.match(runTidyPipeline('<head><meta charset="UTF-8"></head><p>x</p>', off).output, /<head>/);
+});
